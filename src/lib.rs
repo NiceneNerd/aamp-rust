@@ -1,4 +1,5 @@
 #![feature(seek_convenience, const_fn)]
+use crc::{crc32, Hasher32};
 use indexmap::IndexMap;
 pub mod names;
 mod parse;
@@ -7,6 +8,7 @@ mod write;
 mod yaml;
 
 #[derive(Debug, PartialEq, Clone)]
+/// Represents a single AAMP parameter
 pub enum Parameter {
     Bool(bool),
     F32(f32),
@@ -67,25 +69,69 @@ impl Parameter {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+/// Represents a single AAMP parameter object, containing a map of parameters by hash
 pub struct ParameterObject(IndexMap<u32, Parameter>);
 
+impl ParameterObject {
+    /// Attempt to get a `Parameter` by name, returns None if not found
+    pub fn param(&self, name: &str) -> Option<&Parameter> {
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+        digest.write(name.as_bytes());
+        self.0.get(&digest.sum32())
+    }
+}
+
+/// Represents a single AAMP parameter list, containing a hash map of parameter objects and
+/// child parameter lists
 #[derive(Debug, PartialEq, Clone)]
 pub struct ParameterList {
     pub lists: IndexMap<u32, ParameterList>,
     pub objects: IndexMap<u32, ParameterObject>,
 }
 
+impl ParameterList {
+    /// Attempt to get a `ParameterList` by name, returns None if not found
+    pub fn list(&self, name: &str) -> Option<&ParameterList> {
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+        digest.write(name.as_bytes());
+        self.lists.get(&digest.sum32())
+    }
+
+    /// Attempt to get a `ParameterObject` by name, returns None if not found
+    pub fn object(&self, name: &str) -> Option<&ParameterObject> {
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+        digest.write(name.as_bytes());
+        self.objects.get(&digest.sum32())
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
-/// Represents a single AAMP ParameterIO document
+/// Represents a single AAMP parameter IO document
 pub struct ParameterIO {
-    /// The ParameterIO version, required by the format but of no functional importance
+    /// The parameter IO version, required by the format but of no functional importance
     pub version: u32,
-    /// The ParameterIO type, required by the format but of no functional importance
+    /// The parameter IO type, required by the format but of no functional importance
     pub pio_type: String,
-    /// The lists in the ParameterIO root list (`param_root`)
+    /// The lists in the parameter IO root list (`param_root`)
     pub lists: IndexMap<u32, ParameterList>,
-    /// The objects in the ParameterIO root list (`param_root`)
+    /// The objects in the parameter IO root list (`param_root`)
     pub objects: IndexMap<u32, ParameterObject>,
+}
+
+impl ParameterIO {
+    /// Attempt to get a `ParameterList` by name, returns None if not found
+    pub fn list(&self, name: &str) -> Option<&ParameterList> {
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+        digest.write(name.as_bytes());
+        self.lists.get(&digest.sum32())
+    }
+
+    /// Attempt to get a `ParameterObject` by name, returns None if not found
+    pub fn object(&self, name: &str) -> Option<&ParameterObject> {
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+        digest.write(name.as_bytes());
+        self.objects.get(&digest.sum32())
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
-# aamp
+# Nintendo parameter archive (AAMP) library in Rust
 
 A simple to use library for reading, writing, and converting Nintendo parameter archive (AAMP) files
-in Rust. Supports only AAMP version 2, used in _The Legend of Zelda: Breath of the Wild_. Can dump
+in Rust. Supports only AAMP version 2, used in _The Legend of Zelda: Breath of the Wild_. Can
 convert from AAMP to readable, editable YAML and back.
 
 ```rust
