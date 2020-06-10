@@ -234,6 +234,11 @@ impl ParameterObject {
     }
 }
 
+fn add_parsed_string_to_table(string: &str) {
+    let mut table = crate::names::TABLE.lock().unwrap();
+    table.add_name(string);
+}
+
 impl Parameter {
     fn from_parse_param<R: Read + Seek>(
         param: ParseParameter,
@@ -252,12 +257,12 @@ impl Parameter {
             ParameterType::Color => Ok(Parameter::Color(types::Color::read(reader)?)),
             ParameterType::String32 => {
                 let name = NullString::read(reader)?.to_string();
-                super::names::get_default_name_table().add_name(&name);
+                add_parsed_string_to_table(&name);
                 Ok(Parameter::String32(name))
             }
             ParameterType::String64 => {
                 let name = NullString::read(reader)?.to_string();
-                super::names::get_default_name_table().add_name(&name);
+                add_parsed_string_to_table(&name);
                 Ok(Parameter::String64(name))
             }
             ParameterType::Curve1 => Ok(Parameter::Curve1(types::Curve1::read(reader)?)),
@@ -278,7 +283,7 @@ impl Parameter {
             }
             ParameterType::String256 => {
                 let name = NullString::read(reader)?.to_string();
-                super::names::get_default_name_table().add_name(&name);
+                add_parsed_string_to_table(&name);
                 Ok(Parameter::String256(name))
             }
             ParameterType::Quat => Ok(Parameter::Quat(types::Quat::read(reader)?)),
@@ -297,7 +302,7 @@ impl Parameter {
             }
             ParameterType::StringRef => {
                 let name = NullString::read(reader)?.to_string();
-                super::names::get_default_name_table().add_name(&name);
+                add_parsed_string_to_table(&name);
                 Ok(Parameter::StringRef(name))
             }
         }

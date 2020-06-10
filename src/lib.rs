@@ -54,18 +54,18 @@ impl Parameter {
         }
     }
 
-    fn is_seq(self: &Parameter) -> bool {
-        if self.is_string() {
-            return false;
-        };
-        if self.is_buffer() {
-            return true;
-        };
-        match self {
-            Parameter::Bool(_) | Parameter::F32(_) | Parameter::U32(_) | Parameter::Int(_) => false,
-            _ => true,
-        }
-    }
+    // fn is_seq(self: &Parameter) -> bool {
+    //     if self.is_string() {
+    //         return false;
+    //     };
+    //     if self.is_buffer() {
+    //         return true;
+    //     };
+    //     match self {
+    //         Parameter::Bool(_) | Parameter::F32(_) | Parameter::U32(_) | Parameter::Int(_) => false,
+    //         _ => true,
+    //     }
+    // }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -139,6 +139,7 @@ mod tests {
     use super::ParameterIO;
     use glob::glob;
     use std::fs::File;
+    use std::io::Write;
     use std::path::PathBuf;
 
     #[test]
@@ -160,7 +161,10 @@ mod tests {
             let good_file: PathBuf = file.unwrap();
             let mut reader = File::open(&good_file).unwrap();
             let pio: ParameterIO = ParameterIO::from_binary(&mut reader).unwrap();
-            pio.to_text().unwrap();
+            File::create(good_file.with_extension("yml"))
+                .unwrap()
+                .write(pio.to_text().unwrap().as_bytes())
+                .unwrap();
         }
     }
 }

@@ -1,301 +1,279 @@
-use super::names;
-use super::{Parameter, ParameterIO, ParameterList, ParameterObject};
-use libyaml::{Emitter, Event};
+use crate::names;
+use crate::{Parameter, ParameterIO, ParameterList, ParameterObject};
 use std::error::Error;
 use std::io::{BufWriter, Write};
 
 impl ParameterIO {
-    pub fn to_text(self: &ParameterIO) -> Result<String, Box<dyn Error>> {
-        let mut writer = BufWriter::new(vec![]);
-        let mut emit = Emitter::new(writer.by_ref())?;
-        emit.emit(Event::StreamStart {
-            encoding: Option::Some(libyaml::Encoding::Utf8),
-        })?;
-        emit.emit(Event::DocumentStart {
-            version: None,
-            tags: vec![],
-            implicit: true,
-        })?;
-        emit.emit(Event::MappingStart {
-            anchor: None,
-            tag: Some(String::from("!io")),
-            implicit: false,
-            style: Some(libyaml::MappingStyle::Block),
-        })?;
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: String::from("version"),
-        })?;
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: format!("{}", self.version),
-        })?;
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: String::from("type"),
-        })?;
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: format!("{}", self.pio_type),
-        })?;
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: String::from("param_root"),
-        })?;
-        let clone = self.clone();
+    /// Returns a YAML representation of an AAMP parameter IO as a string. The output is fully
+    /// compatible with the representation used in the `oead` C++ library, and compatible with the
+    /// representation used in the `aamp` Python library except where buffer types are used.
+    pub fn to_text(self) -> Result<String, Box<dyn Error>> {
+        let mut bytes: Vec<u8> = vec![];
+        let mut writer = BufWriter::new(&mut bytes);
+        self.write_text(&mut writer)?;
+        drop(writer);
+        Ok(std::str::from_utf8(&mut bytes)?.to_owned())
+    }
+
+    /// Writes a YAML document representing an AAMP parameter IO into a writer. The output is fully
+    /// compatible with the representation used in the `oead` C++ library, and compatible with the
+    /// representation used in the `aamp` Python library except where buffer types are used.
+    pub fn write_text<W: Write>(self, writer: &mut W) -> Result<(), Box<dyn Error>> {
         let param_root = ParameterList {
-            lists: clone.lists,
-            objects: clone.objects,
+            lists: self.lists,
+            objects: self.objects,
         };
-        write_list(2767637356, &param_root, &mut emit)?;
-        emit.emit(Event::MappingEnd)?;
-        emit.emit(Event::DocumentEnd { implicit: true })?;
-        emit.flush()?;
-        drop(emit);
-        match unescape::unescape(std::str::from_utf8(&writer.into_inner()?)?) {
-            Some(s) => Ok(s),
-            None => {
-                let err: Box<dyn Error> = String::from("Invalid string data").into();
-                Err(err)
-            }
+        write!(
+            writer,
+            "!io\nversion: {}\ntype: {}\nparam_root: ",
+            self.version, self.pio_type
+        )?;
+        write_list(writer, &param_root, 2767637356, 1)?;
+        writer.flush()?;
+        Ok(())
+    }
+}
+
+const INDENTS: [&str; 20] = [
+    "",
+    "  ",
+    "    ",
+    "      ",
+    "        ",
+    "          ",
+    "            ",
+    "              ",
+    "                ",
+    "                  ",
+    "                    ",
+    "                      ",
+    "                        ",
+    "                          ",
+    "                            ",
+    "                              ",
+    "                                ",
+    "                                  ",
+    "                                    ",
+    "                                      ",
+];
+
+fn write_list<W: Write>(
+    writer: &mut W,
+    list: &ParameterList,
+    crc: u32,
+    level: usize,
+) -> Result<(), Box<dyn Error>> {
+    write!(writer, "!list")?;
+    write!(writer, "\n{}objects:", &INDENTS[level])?;
+    if list.objects.len() > 0 {
+        for (i, (subcrc, obj)) in list.objects.iter().enumerate() {
+            write!(
+                writer,
+                "\n{}{}: ",
+                &INDENTS[level + 1],
+                try_get_name(subcrc, &crc, i)
+            )?;
+            write_object(writer, obj, *subcrc, level + 2)?;
         }
+    } else {
+        write!(writer, " {{}}")?;
     }
-}
-
-fn write_list(crc: u32, list: &ParameterList, emit: &mut Emitter) -> Result<(), Box<dyn Error>> {
-    emit.emit(Event::MappingStart {
-        anchor: None,
-        tag: Some(String::from("!list")),
-        implicit: false,
-        style: Some(libyaml::MappingStyle::Block),
-    })?;
-    emit.emit(Event::Scalar {
-        anchor: None,
-        tag: None,
-        plain_implicit: true,
-        quoted_implicit: false,
-        style: None,
-        value: String::from("objects"),
-    })?;
-    emit.emit(Event::MappingStart {
-        anchor: None,
-        tag: None,
-        implicit: false,
-        style: Some(libyaml::MappingStyle::Block),
-    })?;
-    for (i, (subcrc, obj)) in list.objects.iter().enumerate() {
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: try_get_name(&subcrc, &crc, i),
-        })?;
-        write_object(*subcrc, &obj, emit)?;
+    write!(writer, "\n{}lists:", &INDENTS[level])?;
+    if list.lists.len() > 0 {
+        for (i, (subcrc, sublist)) in list.lists.iter().enumerate() {
+            write!(
+                writer,
+                "\n{}{}: ",
+                &INDENTS[level + 1],
+                try_get_name(subcrc, &crc, i)
+            )?;
+            write_list(writer, sublist, *subcrc, level + 2)?;
+        }
+    } else {
+        write!(writer, " {{}}")?;
     }
-    emit.emit(Event::MappingEnd)?;
-    emit.emit(Event::Scalar {
-        anchor: None,
-        tag: None,
-        plain_implicit: true,
-        quoted_implicit: false,
-        style: None,
-        value: String::from("lists"),
-    })?;
-    emit.emit(Event::MappingStart {
-        anchor: None,
-        tag: None,
-        implicit: false,
-        style: Some(libyaml::MappingStyle::Block),
-    })?;
-    for (i, (subcrc, sublist)) in list.lists.iter().enumerate() {
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: try_get_name(&subcrc, &crc, i),
-        })?;
-        write_list(crc, &sublist, emit)?;
-    }
-    emit.emit(Event::MappingEnd)?;
-    emit.emit(Event::MappingEnd)?;
     Ok(())
 }
 
-fn write_object(crc: u32, obj: &ParameterObject, emit: &mut Emitter) -> Result<(), Box<dyn Error>> {
-    emit.emit(Event::MappingStart {
-        anchor: None,
-        tag: Some(String::from("!obj")),
-        implicit: false,
-        style: Some(libyaml::MappingStyle::Block),
-    })?;
-    for (i, (subcrc, param)) in obj.0.iter().enumerate() {
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: true,
-            style: Some(libyaml::ScalarStyle::Plain),
-            value: try_get_name(subcrc, &crc, i),
-        })?;
-        write_param(&param, emit)?;
+fn write_object<W: Write>(
+    writer: &mut W,
+    obj: &ParameterObject,
+    crc: u32,
+    level: usize,
+) -> Result<(), Box<dyn Error>> {
+    write!(writer, "!obj")?;
+    if obj.0.len() > 0 {
+        for (i, (subcrc, param)) in obj.0.iter().enumerate() {
+            write!(
+                writer,
+                "\n{}{}: ",
+                &INDENTS[level],
+                try_get_name(subcrc, &crc, i)
+            )?;
+            write_param(writer, param)?;
+        }
+    } else {
+        write!(writer, " {{}}")?;
     }
-    emit.emit(Event::MappingEnd)?;
     Ok(())
 }
 
-fn write_param(param: &Parameter, emit: &mut Emitter) -> Result<(), Box<dyn Error>> {
-    let mut tag: Option<String> = None;
-    let mut value = String::new();
+fn write_param<W: Write>(writer: &mut W, param: &Parameter) -> Result<(), Box<dyn Error>> {
     match param {
-        Parameter::Bool(b) => value = format!("{:?}", b),
+        Parameter::Bool(b) => write!(writer, "{}", if *b { "true" } else { "false" })?,
         Parameter::BufferBinary(bb) => {
-            write_seq(bb.buffer.iter(), "!buffer_binary", emit)?;
+            write!(writer, "!buffer_binary ")?;
+            write_seq(writer, bb.buffer.iter(), bb.buffer.len())?;
         }
         Parameter::BufferF32(bf) => {
-            write_seq(bf.buffer.iter(), "!buffer_f32", emit)?;
+            write!(writer, "!buffer_f32 ")?;
+            write_float_seq(writer, bf.buffer.iter(), bf.buffer.len())?;
         }
         Parameter::BufferInt(bi) => {
-            write_seq(bi.buffer.iter(), "!buffer_int", emit)?;
+            write!(writer, "!buffer_int ")?;
+            write_seq(writer, bi.buffer.iter(), bi.buffer.len())?
         }
         Parameter::BufferU32(bu) => {
-            write_seq(bu.buffer.iter(), "!buffer_u32", emit)?;
+            write!(writer, "!buffer_u32 ")?;
+            write_seq(writer, bu.buffer.iter(), bu.buffer.len())?
         }
         Parameter::Color(c) => {
-            write_seq(c.0.iter(), "!color", emit)?;
+            write!(writer, "!color ")?;
+            write_float_seq(writer, c.0.iter(), 4)?;
         }
         Parameter::Curve1(c) => {
-            write_seq(curve_to_vec(&c.curve).iter(), "!curve", emit)?;
+            write!(writer, "!curve [")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve))?;
+            write!(writer, "]")?;
         }
         Parameter::Curve2(c) => {
-            let mut curves = curve_to_vec(&c.curve1);
-            curves.extend(curve_to_vec(&c.curve2));
-            write_seq(curves.iter(), "!curve", emit)?;
+            write!(writer, "!curve [")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve1))?;
+            write!(writer, ", ")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve2))?;
+            write!(writer, "]")?;
         }
         Parameter::Curve3(c) => {
-            let mut curves = curve_to_vec(&c.curve1);
-            curves.extend(curve_to_vec(&c.curve2));
-            curves.extend(curve_to_vec(&c.curve3));
-            write_seq(curves.iter(), "!curve", emit)?;
+            write!(writer, "!curve [")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve1))?;
+            write!(writer, ", ")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve2))?;
+            write!(writer, ", ")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve3))?;
+            write!(writer, "]")?;
         }
         Parameter::Curve4(c) => {
-            let mut curves = curve_to_vec(&c.curve1);
-            curves.extend(curve_to_vec(&c.curve2));
-            curves.extend(curve_to_vec(&c.curve3));
-            curves.extend(curve_to_vec(&c.curve4));
-            write_seq(curves.iter(), "!curve", emit)?;
+            write!(writer, "!curve [")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve1))?;
+            write!(writer, ", ")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve2))?;
+            write!(writer, ", ")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve3))?;
+            write!(writer, ", ")?;
+            write!(writer, "{}", &curve_to_vec(&c.curve4))?;
+            write!(writer, "]")?;
         }
-        Parameter::F32(f) => value = format!("{:?}", f),
-        Parameter::Int(i) => value = format!("{}", i),
-        Parameter::Quat(q) => write_seq(q.0.iter(), "!quat", emit)?,
+        Parameter::F32(f) => write!(writer, "{}", ryu::Buffer::new().format(*f))?,
+        Parameter::Int(i) => {
+            let mut buf = num_format::Buffer::default();
+            buf.write_formatted(i, &num_format::Locale::en);
+            write!(writer, "{}", buf.as_str())?;
+        }
+        Parameter::Quat(q) => {
+            write!(writer, "!quat ")?;
+            write_float_seq(writer, q.0.iter(), 4)?
+        }
         Parameter::String32(s) => {
-            value = s.to_string();
-            tag = Some(String::from("!str32"))
+            write!(writer, "!str32 {}", if s.len() > 0 { &s } else { "\"\"" })?
         }
         Parameter::String64(s) => {
-            value = s.to_string();
-            tag = Some(String::from("!str64"))
+            write!(writer, "!str64 {}", if s.len() > 0 { &s } else { "\"\"" })?
         }
         Parameter::String256(s) => {
-            value = s.to_string();
-            tag = Some(String::from("!str256"))
+            write!(writer, "!str256 {}", if s.len() > 0 { &s } else { "\"\"" })?
         }
-        Parameter::StringRef(s) => value = s.to_string(),
+        Parameter::StringRef(s) => write!(writer, "{}", if s.len() > 0 { &s } else { "\"\"" })?,
         Parameter::U32(u) => {
-            value = format!("{}", u);
-            tag = Some(String::from("!u"))
+            let mut buf = num_format::Buffer::default();
+            buf.write_formatted(u, &num_format::Locale::en);
+            write!(writer, "!u {}", buf.as_str())?
         }
-        Parameter::Vec2(v) => write_seq(v.0.iter(), "!vec2", emit)?,
-        Parameter::Vec3(v) => write_seq(v.0.iter(), "!vec3", emit)?,
-        Parameter::Vec4(v) => write_seq(v.0.iter(), "!vec4", emit)?,
+        Parameter::Vec2(v) => {
+            write!(writer, "!vec2 ")?;
+            write_float_seq(writer, v.0.iter(), 2)
+        }?,
+        Parameter::Vec3(v) => {
+            write!(writer, "!vec3 ")?;
+            write_float_seq(writer, v.0.iter(), 3)
+        }?,
+        Parameter::Vec4(v) => {
+            write!(writer, "!vec4 ")?;
+            write_float_seq(writer, v.0.iter(), 4)
+        }?,
     };
-    let implicit = match param {
-        Parameter::StringRef(_) | Parameter::F32(_) | Parameter::Int(_) | Parameter::Bool(_) => {
-            true
-        }
-        _ => false,
-    };
-    if !param.is_seq() {
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag,
-            plain_implicit: implicit,
-            quoted_implicit: implicit,
-            style: if value.len() == 0 {
-                Some(libyaml::ScalarStyle::DoubleQuoted)
-            } else {
-                None
-            },
-            value,
-        })?;
-    }
     Ok(())
 }
 
-fn write_seq<'a, I, T>(seq: I, tag: &str, emit: &mut Emitter) -> Result<(), Box<dyn Error>>
+fn write_seq<'a, I, T, W>(writer: &mut W, seq: I, count: usize) -> Result<(), Box<dyn Error>>
 where
     I: Iterator<Item = &'a T>,
-    T: 'a + std::fmt::Display + std::fmt::Debug,
+    T: 'a + num_format::ToFormattedStr + std::fmt::Display,
+    W: Write,
 {
-    emit.emit(Event::SequenceStart {
-        anchor: None,
-        tag: Some(String::from(tag)),
-        implicit: false,
-        style: Some(libyaml::SequenceStyle::Flow),
-    })?;
-    for i in seq {
-        emit.emit(Event::Scalar {
-            anchor: None,
-            tag: None,
-            plain_implicit: true,
-            quoted_implicit: false,
-            style: None,
-            value: format!("{:?}", i),
-        })?;
+    write!(writer, "[")?;
+    for (i, x) in seq.enumerate() {
+        write!(writer, "{}", x)?;
+        if i < count - 1 {
+            write!(writer, ", ")?;
+        }
     }
-    emit.emit(Event::SequenceEnd)?;
+    write!(writer, "]")?;
     Ok(())
 }
 
-fn curve_to_vec(curve: &super::types::Curve) -> Vec<String> {
-    let mut vec = vec![];
+fn write_float_seq<'a, I, T, W>(writer: &mut W, seq: I, count: usize) -> Result<(), Box<dyn Error>>
+where
+    I: Iterator<Item = &'a T>,
+    T: 'a + ryu::Float,
+    W: Write,
+{
+    let mut buf = ryu::Buffer::new();
+    write!(writer, "[")?;
+    for (i, x) in seq.enumerate() {
+        write!(writer, "{}", buf.format(*x))?;
+        if i < count - 1 {
+            write!(writer, ", ")?;
+        }
+    }
+    write!(writer, "]")?;
+    Ok(())
+}
+
+fn curve_to_vec(curve: &super::types::Curve) -> String {
+    let mut vec = Vec::with_capacity(3);
     vec.push(format!("{}", curve.a));
     vec.push(format!("{}", curve.b));
-    for f in &curve.floats {
-        vec.push(format!("{:?}", f));
-    }
-    vec
+    let mut buf = ryu::Buffer::new();
+    vec.push(
+        curve
+            .floats
+            .iter()
+            .map(|f| buf.format(*f).to_string())
+            .collect::<String>(),
+    );
+    vec.join(", ")
 }
 
 fn try_get_name(crc: &u32, parent: &u32, idx: usize) -> String {
-    match names::get_default_name_table().get_name(*crc) {
+    let table = names::TABLE.lock().unwrap();
+    match table.get_name(*crc) {
         Some(s) => s.to_string(),
-        None => match names::guess_name(*crc, *parent, idx) {
-            Some(s) => s,
-            None => format!("{}", crc),
-        },
+        None => {
+            drop(table);
+            match names::guess_name(*crc, *parent, idx) {
+                Some(s) => s,
+                None => format!("{}", crc),
+            }
+        }
     }
 }
