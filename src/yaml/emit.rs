@@ -175,29 +175,26 @@ fn write_param<W: Write>(writer: &mut W, param: &Parameter) -> Result<(), Box<dy
         }
         Parameter::F32(f) => write!(writer, "{}", ryu::Buffer::new().format(*f))?,
         Parameter::Int(i) => {
-            let mut buf = num_format::Buffer::default();
-            buf.write_formatted(i, &num_format::Locale::en);
-            write!(writer, "{}", buf.as_str())?;
+            write!(writer, "{}", i)?;
         }
         Parameter::Quat(q) => {
             write!(writer, "!quat ")?;
             write_float_seq(writer, q.0.iter(), 4)?
         }
         Parameter::String32(s) => {
-            write!(writer, "!str32 {}", if s.len() > 0 { &s } else { "\"\"" })?
+            write!(writer, "!str32 ")?;
+            write_string(writer, s)?
         }
         Parameter::String64(s) => {
-            write!(writer, "!str64 {}", if s.len() > 0 { &s } else { "\"\"" })?
+            write!(writer, "!str64 ")?;
+            write_string(writer, s)?
         }
         Parameter::String256(s) => {
-            write!(writer, "!str256 {}", if s.len() > 0 { &s } else { "\"\"" })?
+            write!(writer, "!str256 ")?;
+            write_string(writer, s)?
         }
-        Parameter::StringRef(s) => write!(writer, "{}", if s.len() > 0 { &s } else { "\"\"" })?,
-        Parameter::U32(u) => {
-            let mut buf = num_format::Buffer::default();
-            buf.write_formatted(u, &num_format::Locale::en);
-            write!(writer, "!u {}", buf.as_str())?
-        }
+        Parameter::StringRef(s) => write_string(writer, s)?,
+        Parameter::U32(u) => write!(writer, "!u 0x{:X}", u)?,
         Parameter::Vec2(v) => {
             write!(writer, "!vec2 ")?;
             write_float_seq(writer, v.0.iter(), 2)
@@ -211,6 +208,17 @@ fn write_param<W: Write>(writer: &mut W, param: &Parameter) -> Result<(), Box<dy
             write_float_seq(writer, v.0.iter(), 4)
         }?,
     };
+    Ok(())
+}
+
+fn write_string<W: Write>(writer: &mut W, string: &str) -> Result<(), Box<dyn Error>> {
+    if string.contains(" ") || parse_int::parse::<usize>(string).is_ok() || string.len() == 0 {
+        write!(writer, "\"")?;
+        write!(writer, "{}", string)?;
+        write!(writer, "\"")?;
+    } else {
+        write!(writer, "{}", string)?;
+    }
     Ok(())
 }
 
@@ -249,7 +257,7 @@ where
     Ok(())
 }
 
-fn curve_to_vec(curve: &super::types::Curve) -> String {
+fn curve_to_vec(curve: &crate::types::Curve) -> String {
     let mut vec = Vec::with_capacity(3);
     vec.push(format!("{}", curve.a));
     vec.push(format!("{}", curve.b));
@@ -259,7 +267,8 @@ fn curve_to_vec(curve: &super::types::Curve) -> String {
             .floats
             .iter()
             .map(|f| buf.format(*f).to_string())
-            .collect::<String>(),
+            .collect::<Vec<String>>()
+            .join(", "),
     );
     vec.join(", ")
 }
@@ -267,11 +276,17 @@ fn curve_to_vec(curve: &super::types::Curve) -> String {
 fn try_get_name(crc: &u32, parent: &u32, idx: usize) -> String {
     let table = names::TABLE.lock().unwrap();
     match table.get_name(*crc) {
-        Some(s) => s.to_string(),
+        Some(s) => match s.parse::<u32>() {
+            Ok(s) => format!("\"{}\"", s),
+            Err(_) => s.to_string(),
+        },
         None => {
             drop(table);
             match names::guess_name(*crc, *parent, idx) {
-                Some(s) => s,
+                Some(s) => match s.parse::<u32>() {
+                    Ok(s) => format!("\"{}\"", s),
+                    Err(_) => s.to_string(),
+                },
                 None => format!("{}", crc),
             }
         }

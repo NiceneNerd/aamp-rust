@@ -167,4 +167,25 @@ mod tests {
                 .unwrap();
         }
     }
+
+    #[test]
+    fn yaml_roundtrip() {
+        for file in glob("test/*.b*").unwrap() {
+            let good_file: PathBuf = file.unwrap();
+            let mut reader = File::open(&good_file).unwrap();
+            let pio: ParameterIO = ParameterIO::from_binary(&mut reader).unwrap();
+            let new_text = pio.clone().to_text().unwrap();
+            let new_pio = ParameterIO::from_text(&new_text).unwrap();
+            if pio != new_pio {
+                File::create(&good_file.with_extension("2.yml"))
+                    .unwrap()
+                    .write(new_text.as_bytes())
+                    .unwrap();
+                panic!(format!(
+                    "{:?} failed YAML roundtrip\n{:?}\n{:?}",
+                    &good_file, pio, new_pio
+                ));
+            }
+        }
+    }
 }
