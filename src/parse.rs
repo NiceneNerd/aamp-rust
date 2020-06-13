@@ -165,6 +165,8 @@ struct ParseBufferBinary {
 }
 
 impl ParameterIO {
+    /// Parses an AAMP Parameter IO document from its binary format. Takes any reader with the
+    /// Read and Seek traits and returns a result containing a `ParameterIO` or a `ParseError`.
     pub fn from_binary<R: Read + Seek>(reader: &mut R) -> Result<ParameterIO, ParseError> {
         let ppio: ParseParameterIO = ParseParameterIO::read(reader)?;
         reader.seek(SeekFrom::Start((ppio.header.pio_offset + 0x30) as u64))?;

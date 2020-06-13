@@ -132,8 +132,23 @@ struct WriteParameterIO<'x> {
 }
 
 impl ParameterIO {
+    /// Serializes an AAMP Parameter IO document to its binary format. Returns a result containing
+    /// a `Vec<u8>` or a boxed error.
     pub fn to_binary(self: ParameterIO) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut buffer: Cursor<Vec<u8>> = Cursor::new(vec![]);
+        self.write_binary(&mut buffer)?;
+        let mut bytes: Vec<u8> = vec![];
+        buffer.seek(SeekFrom::Start(0))?;
+        buffer.read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
+    /// Serializes an AAMP Parameter IO document to its binary format using a write implementing the
+    /// Write and Seek traits. Returns a result indicating success or a boxed error.
+    pub fn write_binary<W: Write + Seek>(
+        self: ParameterIO,
+        writer: &mut W,
+    ) -> Result<(), Box<dyn Error>> {
         let param_root = ParameterList {
             lists: self.lists,
             objects: self.objects,
@@ -191,19 +206,16 @@ impl ParameterIO {
             string_section_size: string_size as u32,
             idk_section_size: 1,
         };
-        header.write(&mut buffer)?;
-        pio_type.write(&mut buffer)?;
-        align_cursor(&mut buffer)?;
-        buffer.write(list_buffer.get_ref())?;
-        buffer.write(obj_buffer.get_ref())?;
-        buffer.write(param_buffer.get_ref())?;
-        align_cursor(&mut buffer)?;
-        buffer.write(data_buffer.get_ref())?;
-        buffer.write(&[0])?;
-        let mut bytes: Vec<u8> = vec![];
-        buffer.seek(SeekFrom::Start(0))?;
-        buffer.read_to_end(&mut bytes)?;
-        Ok(bytes)
+        header.write(writer)?;
+        pio_type.write(writer)?;
+        align_cursor(writer)?;
+        writer.write(list_buffer.get_ref())?;
+        writer.write(obj_buffer.get_ref())?;
+        writer.write(param_buffer.get_ref())?;
+        align_cursor(writer)?;
+        writer.write(data_buffer.get_ref())?;
+        writer.write(&[0])?;
+        Ok(())
     }
 }
 
@@ -364,7 +376,7 @@ fn count_params(list: &ParameterList) -> usize {
     total
 }
 
-fn align_cursor(buffer: &mut Cursor<Vec<u8>>) -> Result<(), Box<dyn Error>> {
+fn align_cursor<W: Write + Seek>(buffer: &mut W) -> Result<(), Box<dyn Error>> {
     let pos = buffer.seek(SeekFrom::Current(0))? as u32;
     buffer.seek(SeekFrom::Start(align(pos) as u64))?;
     Ok(())

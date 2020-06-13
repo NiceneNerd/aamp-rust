@@ -11,8 +11,9 @@ lazy_static::lazy_static! {
 }
 
 impl ParameterIO {
+    /// Parses an AAMP Parameter IO document from a YAML representation. Takes a string slice and
+    /// returns a result containing a `ParameterIO` or a boxed error.
     pub fn from_text(text: &str) -> Result<ParameterIO, Box<dyn Error>> {
-        // let workaround_text = NUM_FIX_RE.replace_all(text, "\"$1\":");
         let mut parser = Parser::new(text.chars());
         let (pio_type, version) = parse_header(&mut parser)?;
         let mut pio_parser = PioYamlParser::new(version, pio_type);
