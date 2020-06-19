@@ -1,14 +1,10 @@
+use super::forked::parser::*;
+use super::forked::scanner::*;
 use crate::types::*;
 use crate::{Parameter, ParameterIO, ParameterList, ParameterObject};
 use crc::{crc32, Hasher32};
 use indexmap::IndexMap;
 use std::error::Error;
-use yaml_rust::parser::*;
-use yaml_rust::scanner::*;
-
-lazy_static::lazy_static! {
-    static ref NUM_FIX_RE: regex::Regex = regex::Regex::new(r"\b(\d{1,3}):").unwrap();
-}
 
 impl ParameterIO {
     /// Parses an AAMP Parameter IO document from a YAML representation. Takes a string slice and

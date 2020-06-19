@@ -17,3 +17,9 @@ for obj in pio.objects() {
 // Dumps YAML representation to a String
 let yaml_dump: String = pio.to_text().unwrap();
 ```
+
+## License Notice
+
+This software contains some edited code from [`yaml-rust`](https://crates.io/crates/yaml-rust),
+primarily the addition of support for tags on maps and sequences. The original MIT/Apache license
+and code are available on the [GitHub repo](https://github.com/chyh1990/yaml-rust).

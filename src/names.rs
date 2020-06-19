@@ -2,7 +2,6 @@ use cached::proc_macro::cached;
 use crc::{crc32, Hasher32};
 use lazy_static::lazy_static;
 use metrohash::MetroHashMap;
-use runtime_fmt::{rt_format, rt_format_args};
 use std::sync::Mutex;
 
 const NAMES: &'static str = include_str!("../data/botw_hashed_names.txt");
@@ -124,11 +123,8 @@ fn try_numbered_name(idx: usize, crc: u32) -> Option<String> {
     for name in NUMBERED_NAME_LIST.iter() {
         for i in 0..idx + 2 {
             let mut maybe: String = name.to_string();
-            if name.contains("{}") {
-                maybe = match rt_format!(name, i) {
-                    Ok(s) => s,
-                    _ => maybe,
-                };
+            if name.contains("{") {
+                maybe = rt_format(name, i);
             }
             dig.write(maybe.as_bytes());
             if dig.sum32() == crc as u32 {
@@ -139,4 +135,18 @@ fn try_numbered_name(idx: usize, crc: u32) -> Option<String> {
         dig.reset();
     }
     opt
+}
+
+fn rt_format(name: &str, i: usize) -> String {
+    if name.contains("{}") {
+        name.replace("{}", &format!("{}", i))
+    } else if name.contains("{:02}") {
+        name.replace("{:02}", &format!("{:02}", i))
+    } else if name.contains("{:03}") {
+        name.replace("{:03}", &format!("{:03}", i))
+    } else if name.contains("{:04}") {
+        name.replace("{:04}", &format!("{:04}", i))
+    } else {
+        unreachable!()
+    }
 }
