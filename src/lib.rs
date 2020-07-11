@@ -163,7 +163,7 @@ mod tests {
             let pio: ParameterIO = ParameterIO::from_binary(&mut reader).unwrap();
             File::create(good_file.with_extension("yml"))
                 .unwrap()
-                .write(pio.to_text().unwrap().as_bytes())
+                .write_all(pio.to_text().unwrap().as_bytes())
                 .unwrap();
         }
     }
@@ -179,7 +179,7 @@ mod tests {
             if pio != new_pio {
                 File::create(&good_file.with_extension("2.yml"))
                     .unwrap()
-                    .write(new_text.as_bytes())
+                    .write_all(new_text.as_bytes())
                     .unwrap();
                 panic!(format!(
                     "{:?} failed YAML roundtrip\n{:?}\n{:?}",

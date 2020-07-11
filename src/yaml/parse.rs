@@ -57,7 +57,7 @@ fn parse_header<T: Iterator<Item = char>>(
                                                 match parser.next()?.0 {
                                                     Event::Scalar(v, _, _, _) => {
                                                         assert_eq!(&v, "param_root");
-                                                        return Ok((pio_type, version));
+                                                        Ok((pio_type, version))
                                                     }
                                                     _ => Err(Box::new(PioParseError(
                                                         "Missing param root".to_owned(),
@@ -146,14 +146,14 @@ impl MarkedEventReceiver for PioYamlParser {
                         let params = self
                             .open_params
                             .take()
-                            .ok_or(PioParseError("No params".to_owned()))?;
+                            .ok_or_else(|| PioParseError("No params".to_owned()))?;
                         let key = self
                             .open_keys
                             .pop()
-                            .ok_or(PioParseError("No keys".to_owned()))?;
+                            .ok_or_else(|| PioParseError("No keys".to_owned()))?;
                         self.open_objs
                             .last_mut()
-                            .ok_or(PioParseError("No objcts".to_owned()))?
+                            .ok_or_else(|| PioParseError("No objcts".to_owned()))?
                             .insert(hashit(&key), ParameterObject(params));
                         self.doing_param_key = false;
                     } else if self.doing_objects {
@@ -167,18 +167,18 @@ impl MarkedEventReceiver for PioYamlParser {
                             let list_map = self
                                 .open_list_maps
                                 .pop()
-                                .ok_or(PioParseError("No lists".to_owned()))?;
+                                .ok_or_else(|| PioParseError("No lists".to_owned()))?;
                             let obj_map = self
                                 .open_objs
                                 .pop()
-                                .ok_or(PioParseError("No objects".to_owned()))?;
+                                .ok_or_else(|| PioParseError("No objects".to_owned()))?;
                             let key = self
                                 .open_keys
                                 .pop()
-                                .ok_or(PioParseError("No keys".to_owned()))?;
+                                .ok_or_else(|| PioParseError("No keys".to_owned()))?;
                             self.open_list_maps
                                 .last_mut()
-                                .ok_or(PioParseError("No list maps".to_owned()))?
+                                .ok_or_else(|| PioParseError("No list maps".to_owned()))?
                                 .insert(
                                     hashit(&key),
                                     ParameterList {
@@ -193,11 +193,11 @@ impl MarkedEventReceiver for PioYamlParser {
                                 lists: self
                                     .open_list_maps
                                     .pop()
-                                    .ok_or(PioParseError("No list maps".to_owned()))?,
+                                    .ok_or_else(|| PioParseError("No list maps".to_owned()))?,
                                 objects: self
                                     .open_objs
                                     .pop()
-                                    .ok_or(PioParseError("No objects".to_owned()))?,
+                                    .ok_or_else(|| PioParseError("No objects".to_owned()))?,
                             })
                         }
                         self.doing_lists = !self.doing_lists;
@@ -221,11 +221,11 @@ impl MarkedEventReceiver for PioYamlParser {
                     let seq = self
                         .open_seq
                         .take()
-                        .ok_or(PioParseError("No sequence".to_owned()))?;
+                        .ok_or_else(|| PioParseError("No sequence".to_owned()))?;
                     let tag = self
                         .open_tag
                         .take()
-                        .ok_or(PioParseError("No sequence tag".to_owned()))?;
+                        .ok_or_else(|| PioParseError("No sequence tag".to_owned()))?;
                     let param: Parameter = match tag.as_str() {
                         "vec2" => {
                             Parameter::Vec2(Vec2([seq[0].parse::<f32>()?, seq[1].parse::<f32>()?]))
@@ -284,7 +284,7 @@ impl MarkedEventReceiver for PioYamlParser {
                         Some(key) => {
                             self.open_params
                                 .as_mut()
-                                .ok_or(PioParseError("No params".to_owned()))?
+                                .ok_or_else(|| PioParseError("No params".to_owned()))?
                                 .insert(hashit(key), param);
                         }
                         _ => return Err(Box::new(PioParseError("No key for value".to_owned()))),
@@ -405,7 +405,7 @@ fn vec_to_curve(seq: Vec<String>) -> Result<Parameter, Box<dyn Error>> {
 impl PioYamlParser {
     fn new(version: u32, pio_type: String) -> PioYamlParser {
         PioYamlParser {
-            pio_type: pio_type,
+            pio_type,
             pio_version: version,
             doing_objects: false,
             doing_lists: true,
@@ -529,8 +529,7 @@ fn hashit(string: &str) -> u32 {
     fn do_hash(string: &str) -> u32 {
         let mut digest = crc32::Digest::new(crc32::IEEE);
         digest.write(string.as_bytes());
-        let hash = digest.sum32();
-        hash
+        digest.sum32()
     }
 }
 

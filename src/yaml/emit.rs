@@ -7,28 +7,28 @@ impl ParameterIO {
     /// Returns a YAML representation of an AAMP parameter IO as a string. The output is fully
     /// compatible with the representation used in the `oead` C++ library, and compatible with the
     /// representation used in the `aamp` Python library except where buffer types are used.
-    pub fn to_text(self) -> Result<String, Box<dyn Error>> {
+    pub fn to_text(&self) -> Result<String, Box<dyn Error>> {
         let mut bytes: Vec<u8> = vec![];
         let mut writer = BufWriter::new(&mut bytes);
         self.write_text(&mut writer)?;
         drop(writer);
-        Ok(std::str::from_utf8(&mut bytes)?.to_owned())
+        Ok(std::str::from_utf8(&bytes)?.to_owned())
     }
 
     /// Writes a YAML document representing an AAMP parameter IO into a writer. The output is fully
     /// compatible with the representation used in the `oead` C++ library, and compatible with the
     /// representation used in the `aamp` Python library except where buffer types are used.
-    pub fn write_text<W: Write>(self, writer: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write_text<W: Write>(&self, writer: &mut W) -> Result<(), Box<dyn Error>> {
         let param_root = ParameterList {
-            lists: self.lists,
-            objects: self.objects,
+            lists: self.lists.clone(),
+            objects: self.objects.clone(),
         };
         write!(
             writer,
             "!io\nversion: {}\ntype: {}\nparam_root: ",
             self.version, self.pio_type
         )?;
-        write_list(writer, &param_root, 2767637356, 1)?;
+        write_list(writer, &param_root, 2_767_637_356, 1)?;
         writer.flush()?;
         Ok(())
     }
@@ -65,13 +65,13 @@ fn write_list<W: Write>(
 ) -> Result<(), Box<dyn Error>> {
     write!(writer, "!list")?;
     write!(writer, "\n{}objects:", &INDENTS[level])?;
-    if list.objects.len() > 0 {
+    if !list.objects.is_empty() {
         for (i, (subcrc, obj)) in list.objects.iter().enumerate() {
             write!(
                 writer,
                 "\n{}{}: ",
                 &INDENTS[level + 1],
-                try_get_name(subcrc, &crc, i)
+                try_get_name(*subcrc, crc, i)
             )?;
             write_object(writer, obj, *subcrc, level + 2)?;
         }
@@ -79,13 +79,13 @@ fn write_list<W: Write>(
         write!(writer, " {{}}")?;
     }
     write!(writer, "\n{}lists:", &INDENTS[level])?;
-    if list.lists.len() > 0 {
+    if !list.lists.is_empty() {
         for (i, (subcrc, sublist)) in list.lists.iter().enumerate() {
             write!(
                 writer,
                 "\n{}{}: ",
                 &INDENTS[level + 1],
-                try_get_name(subcrc, &crc, i)
+                try_get_name(*subcrc, crc, i)
             )?;
             write_list(writer, sublist, *subcrc, level + 2)?;
         }
@@ -102,13 +102,13 @@ fn write_object<W: Write>(
     level: usize,
 ) -> Result<(), Box<dyn Error>> {
     write!(writer, "!obj")?;
-    if obj.0.len() > 0 {
+    if !obj.0.is_empty() {
         for (i, (subcrc, param)) in obj.0.iter().enumerate() {
             write!(
                 writer,
                 "\n{}{}: ",
                 &INDENTS[level],
-                try_get_name(subcrc, &crc, i)
+                try_get_name(*subcrc, crc, i)
             )?;
             write_param(writer, param)?;
         }
@@ -212,7 +212,7 @@ fn write_param<W: Write>(writer: &mut W, param: &Parameter) -> Result<(), Box<dy
 }
 
 fn write_string<W: Write>(writer: &mut W, string: &str) -> Result<(), Box<dyn Error>> {
-    if string.contains(" ") || parse_int::parse::<usize>(string).is_ok() || string.len() == 0 {
+    if string.contains(' ') || parse_int::parse::<usize>(string).is_ok() || string.is_empty() {
         write!(writer, "\"")?;
         write!(writer, "{}", string)?;
         write!(writer, "\"")?;
@@ -273,16 +273,16 @@ fn curve_to_vec(curve: &crate::types::Curve) -> String {
     vec.join(", ")
 }
 
-fn try_get_name(crc: &u32, parent: &u32, idx: usize) -> String {
+fn try_get_name(crc: u32, parent: u32, idx: usize) -> String {
     let table = names::TABLE.lock().unwrap();
-    match table.get_name(*crc) {
+    match table.get_name(crc) {
         Some(s) => match s.parse::<u32>() {
             Ok(s) => format!("\"{}\"", s),
             Err(_) => s.to_string(),
         },
         None => {
             drop(table);
-            match names::guess_name(*crc, *parent, idx) {
+            match names::guess_name(crc, parent, idx) {
                 Some(s) => match s.parse::<u32>() {
                     Ok(s) => format!("\"{}\"", s),
                     Err(_) => s.to_string(),

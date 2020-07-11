@@ -4,12 +4,12 @@ use lazy_static::lazy_static;
 use metrohash::MetroHashMap;
 use std::sync::Mutex;
 
-const NAMES: &'static str = include_str!("../data/botw_hashed_names.txt");
-const NUMBERED_NAMES: &'static str = include_str!("../data/botw_numbered_names.txt");
+const NAMES: &str = include_str!("../data/botw_hashed_names.txt");
+const NUMBERED_NAMES: &str = include_str!("../data/botw_numbered_names.txt");
 
 lazy_static! {
     static ref NUMBERED_NAME_LIST: Vec<String> =
-        NUMBERED_NAMES.split("\n").map(|s| s.to_string()).collect();
+        NUMBERED_NAMES.split('\n').map(|s| s.to_string()).collect();
 }
 
 #[cached]
@@ -31,7 +31,7 @@ impl NameTable {
         let mut m: MetroHashMap<u32, String> = MetroHashMap::default();
         if include_stock_names {
             let mut dig = crc32::Digest::new(crc::crc32::IEEE);
-            for name in NAMES.split("\n") {
+            for name in NAMES.split('\n') {
                 dig.write(name.as_bytes());
                 m.insert(dig.sum32(), name.to_string());
                 dig.reset();
@@ -122,10 +122,11 @@ fn try_numbered_name(idx: usize, crc: u32) -> Option<String> {
     let mut dig = crc32::Digest::new(crc32::IEEE);
     for name in NUMBERED_NAME_LIST.iter() {
         for i in 0..idx + 2 {
-            let mut maybe: String = name.to_string();
-            if name.contains("{") {
-                maybe = rt_format(name, i);
-            }
+            let maybe: String = if name.contains('{') {
+                rt_format(name, i)
+            } else {
+                name.to_string()
+            };
             dig.write(maybe.as_bytes());
             if dig.sum32() == crc as u32 {
                 opt = Some(maybe);

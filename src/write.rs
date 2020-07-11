@@ -103,10 +103,12 @@ struct WriteParameter {
 #[binwrite(little)]
 struct WriteParamValue<'a>(&'a Parameter);
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn write_param_type(ptype: &ParameterType) -> u8 {
     *ptype as u8
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn u24_offset(offset: &u32) -> [u8; 3] {
     let bytes = offset.to_le_bytes();
     [bytes[0], bytes[1], bytes[2]]
@@ -134,7 +136,7 @@ struct WriteParameterIO<'x> {
 impl ParameterIO {
     /// Serializes an AAMP Parameter IO document to its binary format. Returns a result containing
     /// a `Vec<u8>` or a boxed error.
-    pub fn to_binary(self: ParameterIO) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn to_binary(&self) -> Result<Vec<u8>, Box<dyn Error>> {
         let mut buffer: Cursor<Vec<u8>> = Cursor::new(vec![]);
         self.write_binary(&mut buffer)?;
         let mut bytes: Vec<u8> = vec![];
@@ -145,13 +147,10 @@ impl ParameterIO {
 
     /// Serializes an AAMP Parameter IO document to its binary format using a write implementing the
     /// Write and Seek traits. Returns a result indicating success or a boxed error.
-    pub fn write_binary<W: Write + Seek>(
-        self: ParameterIO,
-        writer: &mut W,
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn write_binary<W: Write + Seek>(&self, writer: &mut W) -> Result<(), Box<dyn Error>> {
         let param_root = ParameterList {
-            lists: self.lists,
-            objects: self.objects,
+            lists: self.lists.clone(),
+            objects: self.objects.clone(),
         };
         let pio_type = format!("{}\0", self.pio_type);
         let lists_size = (count_lists(&param_root) + 1) * 12;
@@ -162,7 +161,7 @@ impl ParameterIO {
         let mut param_buffer: Cursor<Vec<u8>> = Cursor::new(Vec::with_capacity(params_size / 8));
         let mut data_buffer: Cursor<Vec<u8>> = Cursor::new(vec![]);
         WriteParameterList {
-            crc: 2767637356,
+            crc: 2_767_637_356,
             lists_rel_offset: 3,
             num_lists: param_root.lists.len() as u16,
             objs_rel_offset: (lists_size / 4) as u16,
@@ -209,16 +208,17 @@ impl ParameterIO {
         header.write(writer)?;
         pio_type.write(writer)?;
         align_cursor(writer)?;
-        writer.write(list_buffer.get_ref())?;
-        writer.write(obj_buffer.get_ref())?;
-        writer.write(param_buffer.get_ref())?;
+        writer.write_all(list_buffer.get_ref())?;
+        writer.write_all(obj_buffer.get_ref())?;
+        writer.write_all(param_buffer.get_ref())?;
         align_cursor(writer)?;
-        writer.write(data_buffer.get_ref())?;
-        writer.write(&[0])?;
+        writer.write_all(data_buffer.get_ref())?;
+        writer.write_all(&[0])?;
         Ok(())
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_list_contents<'a>(
     list_offset: u64,
     list: &'a ParameterList,
@@ -231,9 +231,9 @@ fn write_list_contents<'a>(
 ) -> Result<Vec<(u32, &'a Parameter)>, Box<dyn Error>> {
     let mut all_params: Vec<(u32, &Parameter)> = vec![];
     let pos = list_buffer.stream_position()?;
-    if list.objects.len() > 0 {
+    if !list.objects.is_empty() {
         list_buffer.set_position(list_offset + 8);
-        list_buffer.write(
+        list_buffer.write_all(
             &(((obj_buffer.stream_position()? + lists_size as u64 - list_offset) / 4) as u16)
                 .to_le_bytes(),
         )?;
@@ -258,10 +258,10 @@ fn write_list_contents<'a>(
             }
         }
     }
-    if list.lists.len() > 0 {
+    if !list.lists.is_empty() {
         let mut offset_map: IndexMap<u32, u64> = IndexMap::new();
         list_buffer.set_position(list_offset + 4);
-        list_buffer.write(&(((pos - list_offset) / 4) as u16).to_le_bytes())?;
+        list_buffer.write_all(&(((pos - list_offset) / 4) as u16).to_le_bytes())?;
         list_buffer.set_position(pos);
         for (crc, sublist) in list.lists.iter() {
             offset_map.insert(*crc, list_buffer.stream_position()?);
@@ -403,7 +403,7 @@ fn write_param_value(
         | Parameter::String256(s)
         | Parameter::StringRef(s) => {
             s.write(buffer)?;
-            buffer.write(b"\0")?;
+            buffer.write_all(b"\0")?;
         }
         Parameter::Curve1(c) => c.write(buffer)?,
         Parameter::Curve2(c) => c.write(buffer)?,
