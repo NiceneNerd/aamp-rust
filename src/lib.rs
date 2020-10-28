@@ -79,6 +79,23 @@ impl ParameterObject {
         digest.write(name.as_bytes());
         self.0.get(&digest.sum32())
     }
+
+    /// Sets a parameter value
+    pub fn set_param(&mut self, name: &str, value: Parameter) {
+        let mut digest = crc32::Digest::new(crc32::IEEE);
+        digest.write(name.as_bytes());
+        self.0.insert(digest.sum32(), value);
+    }
+    
+    /// Expose reference to underlying IndexMap
+    pub fn params(&self) -> &IndexMap<u32, Parameter> {
+        &self.0
+    }
+
+    /// Expose mutable reference to underlying IndexMap
+    pub fn params_mut(&mut self) -> &mut IndexMap<u32, Parameter> {
+        &mut self.0
+    }
 }
 
 /// Represents a single AAMP parameter list, containing a hash map of parameter objects and
