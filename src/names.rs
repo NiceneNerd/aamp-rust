@@ -9,7 +9,7 @@ const NUMBERED_NAMES: &str = include_str!("../data/botw_numbered_names.txt");
 
 lazy_static! {
     static ref NUMBERED_NAME_LIST: Vec<String> =
-        NUMBERED_NAMES.split('\n').map(|s| s.to_string()).collect();
+        NUMBERED_NAMES.split('\n').map(|s| s.to_owned()).collect();
 }
 
 #[cached]
@@ -33,7 +33,7 @@ impl NameTable {
             let mut dig = crc32::Digest::new(crc::crc32::IEEE);
             for name in NAMES.split('\n') {
                 dig.write(name.as_bytes());
-                m.insert(dig.sum32(), name.to_string());
+                m.insert(dig.sum32(), name.to_owned());
                 dig.reset();
             }
         }
@@ -49,7 +49,7 @@ impl NameTable {
 
     pub fn get_name(&self, crc: u32) -> Option<String> {
         match self.table.get(&crc) {
-            Some(s) => Some(s.to_string()),
+            Some(s) => Some(s.to_owned()),
             None => None,
         }
     }
@@ -63,16 +63,16 @@ fn test_names(parent: &str, idx: usize, crc: u32) -> Option<String> {
     let mut digest = DIGEST.lock().unwrap();
     for i in &[idx, idx + 1] {
         for name in &[
-            format!("{}{}", parent, i),
-            format!("{}_{}", parent, i),
-            format!("{}{:02}", parent, i),
-            format!("{}_{:02}", parent, i),
-            format!("{}{:03}", parent, i),
-            format!("{}_{:03}", parent, i),
+            [parent, i.to_string().as_str()].join(""),
+            [parent, "_", i.to_string().as_str()].join(""),
+            [parent, format!("{:02}", i).as_str()].join(""),
+            [parent, "_", format!("{:02}", i).as_str()].join(""),
+            [parent, format!("{:03}", i).as_str()].join(""),
+            [parent, "_", format!("{:03}", i).as_str()].join(""),
         ] {
             digest.write(name.as_bytes());
             if digest.sum32() == crc {
-                return Some(name.to_string());
+                return Some(name.to_owned());
             }
             digest.reset();
         }
@@ -125,7 +125,7 @@ fn try_numbered_name(idx: usize, crc: u32) -> Option<String> {
             let maybe: String = if name.contains('{') {
                 rt_format(name, i)
             } else {
-                name.to_string()
+                name.to_owned()
             };
             dig.write(maybe.as_bytes());
             if dig.sum32() == crc as u32 {
@@ -138,6 +138,7 @@ fn try_numbered_name(idx: usize, crc: u32) -> Option<String> {
     opt
 }
 
+#[inline]
 fn rt_format(name: &str, i: usize) -> String {
     if name.contains("{}") {
         name.replace("{}", &format!("{}", i))

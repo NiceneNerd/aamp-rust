@@ -104,33 +104,16 @@ struct WriteParameter {
 struct WriteParamValue<'a>(&'a Parameter);
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
+#[inline]
 fn write_param_type(ptype: &ParameterType) -> u8 {
     *ptype as u8
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]
+#[inline]
 fn u24_offset(offset: &u32) -> [u8; 3] {
     let bytes = offset.to_le_bytes();
     [bytes[0], bytes[1], bytes[2]]
-}
-
-#[derive(Debug, BinWrite)]
-#[binwrite(little)]
-struct WriteParameterIO<'x> {
-    header: WriteHeader<'x>,
-    #[binwrite(cstr)]
-    pio_type: String,
-    #[binwrite(align(4))]
-    lists: Vec<WriteParameterList>,
-    #[binwrite(align(4))]
-    objects: Vec<WriteParameterObject>,
-    #[binwrite(align(4))]
-    params: Vec<WriteParameter>,
-    #[binwrite(align(4))]
-    data: Vec<WriteParamValue<'x>>,
-    #[binwrite(align(4))]
-    strings: Vec<WriteParamValue<'x>>,
-    uints: Vec<u32>,
 }
 
 impl ParameterIO {
@@ -148,14 +131,10 @@ impl ParameterIO {
     /// Serializes an AAMP Parameter IO document to its binary format using a write implementing the
     /// Write and Seek traits. Returns a result indicating success or a boxed error.
     pub fn write_binary<W: Write + Seek>(&self, writer: &mut W) -> Result<(), Box<dyn Error>> {
-        let param_root = ParameterList {
-            lists: self.lists.clone(),
-            objects: self.objects.clone(),
-        };
         let pio_type = format!("{}\0", self.pio_type);
-        let lists_size = (count_lists(&param_root) + 1) * 12;
-        let objs_size = count_objs(&param_root) * 8;
-        let params_size = count_params(&param_root) * 8;
+        let lists_size = (count_lists(&self.lists) + 1) * 12;
+        let objs_size = count_objs(&self.lists, self.objects.len()) * 8;
+        let params_size = count_params(&self.lists, &self.objects) * 8;
         let mut list_buffer: Cursor<Vec<u8>> = Cursor::new(Vec::with_capacity(lists_size / 12));
         let mut obj_buffer: Cursor<Vec<u8>> = Cursor::new(Vec::with_capacity(objs_size / 8));
         let mut param_buffer: Cursor<Vec<u8>> = Cursor::new(Vec::with_capacity(params_size / 8));
@@ -163,14 +142,15 @@ impl ParameterIO {
         WriteParameterList {
             crc: 2_767_637_356,
             lists_rel_offset: 3,
-            num_lists: param_root.lists.len() as u16,
+            num_lists: self.lists.len() as u16,
             objs_rel_offset: (lists_size / 4) as u16,
-            num_objs: param_root.objects.len() as u16,
+            num_objs: self.objects.len() as u16,
         }
         .write(&mut list_buffer)?;
         let all_params: Vec<(u32, &Parameter)> = write_list_contents(
             0,
-            &param_root,
+            &self.lists,
+            &self.objects,
             &mut list_buffer,
             &mut obj_buffer,
             &mut param_buffer,
@@ -221,7 +201,8 @@ impl ParameterIO {
 #[allow(clippy::too_many_arguments)]
 fn write_list_contents<'a>(
     list_offset: u64,
-    list: &'a ParameterList,
+    lists: &'a IndexMap<u32, ParameterList>,
+    objects: &'a IndexMap<u32, ParameterObject>,
     list_buffer: &mut Cursor<Vec<u8>>,
     obj_buffer: &mut Cursor<Vec<u8>>,
     param_buffer: &mut Cursor<Vec<u8>>,
@@ -231,14 +212,14 @@ fn write_list_contents<'a>(
 ) -> Result<Vec<(u32, &'a Parameter)>, Box<dyn Error>> {
     let mut all_params: Vec<(u32, &Parameter)> = vec![];
     let pos = list_buffer.stream_position()?;
-    if !list.objects.is_empty() {
+    if !objects.is_empty() {
         list_buffer.set_position(list_offset + 8);
         list_buffer.write_all(
             &(((obj_buffer.stream_position()? + lists_size as u64 - list_offset) / 4) as u16)
                 .to_le_bytes(),
         )?;
         list_buffer.set_position(pos);
-        for (crc, obj) in list.objects.iter() {
+        for (crc, obj) in objects.iter() {
             WriteParameterObject {
                 crc: *crc,
                 params_rel_offset: (((objs_size - obj_buffer.stream_position()? as usize)
@@ -258,12 +239,12 @@ fn write_list_contents<'a>(
             }
         }
     }
-    if !list.lists.is_empty() {
+    if !lists.is_empty() {
         let mut offset_map: IndexMap<u32, u64> = IndexMap::new();
         list_buffer.set_position(list_offset + 4);
         list_buffer.write_all(&(((pos - list_offset) / 4) as u16).to_le_bytes())?;
         list_buffer.set_position(pos);
-        for (crc, sublist) in list.lists.iter() {
+        for (crc, sublist) in lists.iter() {
             offset_map.insert(*crc, list_buffer.stream_position()?);
             WriteParameterList {
                 crc: *crc,
@@ -274,10 +255,11 @@ fn write_list_contents<'a>(
             }
             .write(list_buffer)?;
         }
-        for (crc, sublist) in list.lists.iter() {
+        for (crc, sublist) in lists.iter() {
             all_params.extend(write_list_contents(
                 offset_map[crc],
-                &sublist,
+                &sublist.lists,
+                &sublist.objects,
                 list_buffer,
                 obj_buffer,
                 param_buffer,
@@ -341,34 +323,35 @@ fn write_param_offset(
     Ok(())
 }
 
-fn count_lists(list: &ParameterList) -> usize {
-    let sublist_lists: usize = list
-        .lists
+fn count_lists(lists: &IndexMap<u32, ParameterList>) -> usize {
+    //&ParameterList) -> usize {
+    let sublist_lists: usize = lists
         .values()
-        .map(|list: &ParameterList| count_lists(list))
+        .map(|list: &ParameterList| count_lists(&list.lists))
         .sum();
-    list.lists.len() + sublist_lists
+    lists.len() + sublist_lists
 }
 
-fn count_objs(list: &ParameterList) -> usize {
-    let sublist_objs: usize = list
-        .lists
+fn count_objs(lists: &IndexMap<u32, ParameterList>, objs: usize) -> usize {
+    //&ParameterList) -> usize {
+    let sublist_objs: usize = lists
         .values()
-        .map(|list: &ParameterList| count_objs(list))
+        .map(|list: &ParameterList| count_objs(&list.lists, list.objects.len()))
         .sum();
-    list.objects.len() + sublist_objs
+    objs + sublist_objs
 }
 
-fn count_params(list: &ParameterList) -> usize {
+fn count_params(
+    lists: &IndexMap<u32, ParameterList>,
+    objects: &IndexMap<u32, ParameterObject>,
+) -> usize {
     let mut total: usize = 0;
-    let sublist_params: usize = list
-        .lists
+    let sublist_params: usize = lists
         .values()
-        .map(|list: &ParameterList| count_params(list))
+        .map(|list: &ParameterList| count_params(&list.lists, &list.objects))
         .sum();
     total += sublist_params;
-    let obj_params: usize = list
-        .objects
+    let obj_params: usize = objects
         .values()
         .map(|obj: &ParameterObject| obj.0.len())
         .sum();
@@ -376,12 +359,14 @@ fn count_params(list: &ParameterList) -> usize {
     total
 }
 
+#[inline]
 fn align_cursor<W: Write + Seek>(buffer: &mut W) -> Result<(), Box<dyn Error>> {
     let pos = buffer.seek(SeekFrom::Current(0))? as u32;
     buffer.seek(SeekFrom::Start(align(pos) as u64))?;
     Ok(())
 }
 
+#[inline]
 fn align(int: u32) -> u32 {
     int + 4 - 1 - (int - 1) % 4
 }

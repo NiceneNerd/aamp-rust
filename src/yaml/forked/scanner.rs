@@ -194,19 +194,15 @@ fn is_blankz(c: char) -> bool {
 }
 #[inline]
 fn is_digit(c: char) -> bool {
-    c >= '0' && c <= '9'
+    ('0'..='9').contains(&c)
 }
 #[inline]
 fn is_alpha(c: char) -> bool {
-    match c {
-        '0'..='9' | 'a'..='z' | 'A'..='Z' => true,
-        '_' | '-' => true,
-        _ => false,
-    }
+    matches!(c, '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' | '-')
 }
 #[inline]
 fn is_hex(c: char) -> bool {
-    (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+    ('0'..='9').contains(&c) || ('a'..='f').contains(&c) | ('A'..='F').contains(&c)
 }
 #[inline]
 fn as_hex(c: char) -> u32 {
@@ -219,10 +215,7 @@ fn as_hex(c: char) -> u32 {
 }
 #[inline]
 fn is_flow(c: char) -> bool {
-    match c {
-        ',' | '[' | ']' | '{' | '}' => true,
-        _ => false,
-    }
+    matches!(c, ',' | '[' | ']' | '{' | '}')
 }
 
 pub type ScanResult = Result<(), ScanError>;
@@ -1002,6 +995,7 @@ impl<T: Iterator<Item = char>> Scanner<T> {
         Ok(())
     }
 
+    #[inline]
     fn increase_flow_level(&mut self) -> ScanResult {
         self.simple_keys.push(SimpleKey::new(Marker::new(0, 0, 0)));
         self.flow_level = self
@@ -1010,6 +1004,7 @@ impl<T: Iterator<Item = char>> Scanner<T> {
             .ok_or_else(|| ScanError::new(self.mark, "recursion limit exceeded"))?;
         Ok(())
     }
+    #[inline]
     fn decrease_flow_level(&mut self) {
         if self.flow_level > 0 {
             self.flow_level -= 1;
@@ -1478,6 +1473,7 @@ impl<T: Iterator<Item = char>> Scanner<T> {
         }
     }
 
+    #[inline]
     fn fetch_plain_scalar(&mut self) -> ScanResult {
         self.save_simple_key()?;
         self.disallow_simple_key();
@@ -1701,6 +1697,7 @@ impl<T: Iterator<Item = char>> Scanner<T> {
         }
     }
 
+    #[inline]
     fn unroll_indent(&mut self, col: isize) {
         if self.flow_level > 0 {
             return;

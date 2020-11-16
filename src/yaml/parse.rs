@@ -500,7 +500,9 @@ impl PioYamlParser {
                         match style {
                             TScalarStyle::DoubleQuoted | TScalarStyle::SingleQuoted => {
                                 match val.parse::<u32>() {
-                                    Ok(u) => self.open_keys.push(format!("\"{}\"", u)),
+                                    Ok(u) => {
+                                        self.open_keys.push(["\"", &u.to_string(), "\""].join(""))
+                                    }
                                     Err(_) => self.open_keys.push(val),
                                 }
                             }
@@ -518,6 +520,7 @@ impl PioYamlParser {
     }
 }
 
+#[inline]
 fn hashit(string: &str) -> u32 {
     return match string.parse::<u32>() {
         Ok(crc) => crc,
@@ -526,6 +529,7 @@ fn hashit(string: &str) -> u32 {
             do_hash(&unquoted)
         }
     };
+    #[inline(always)]
     fn do_hash(string: &str) -> u32 {
         let mut digest = crc32::Digest::new(crc32::IEEE);
         digest.write(string.as_bytes());

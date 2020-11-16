@@ -34,38 +34,23 @@ pub enum Parameter {
 }
 
 impl Parameter {
+    #[inline]
     fn is_string(self: &Parameter) -> bool {
-        match self {
+        matches! (self,
             Parameter::String32(_)
             | Parameter::String64(_)
             | Parameter::String256(_)
-            | Parameter::StringRef(_) => true,
-            _ => false,
-        }
+            | Parameter::StringRef(_))
     }
 
+    #[inline]
     fn is_buffer(self: &Parameter) -> bool {
-        match self {
+        matches! (self,
             Parameter::BufferBinary(_)
             | Parameter::BufferF32(_)
             | Parameter::BufferInt(_)
-            | Parameter::BufferU32(_) => true,
-            _ => false,
-        }
+            | Parameter::BufferU32(_))
     }
-
-    // fn is_seq(self: &Parameter) -> bool {
-    //     if self.is_string() {
-    //         return false;
-    //     };
-    //     if self.is_buffer() {
-    //         return true;
-    //     };
-    //     match self {
-    //         Parameter::Bool(_) | Parameter::F32(_) | Parameter::U32(_) | Parameter::Int(_) => false,
-    //         _ => true,
-    //     }
-    // }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -86,7 +71,6 @@ impl ParameterObject {
         digest.write(name.as_bytes());
         self.0.insert(digest.sum32(), value);
     }
-    
     /// Expose reference to underlying IndexMap
     pub fn params(&self) -> &IndexMap<u32, Parameter> {
         &self.0
