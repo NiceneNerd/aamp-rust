@@ -189,4 +189,17 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn yaml_to_binary() {
+        for file in glob("test/*.yml").unwrap() {
+            let pio =
+                ParameterIO::from_text(&std::fs::read_to_string(file.unwrap()).unwrap()).unwrap();
+            let binary = pio.to_binary().unwrap();
+            assert_eq!(
+                pio,
+                ParameterIO::from_binary(&mut std::io::Cursor::new(binary)).unwrap()
+            );
+        }
+    }
 }
