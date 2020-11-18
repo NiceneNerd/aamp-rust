@@ -376,7 +376,7 @@ fn write_param_value(
     buffer: &mut Cursor<Vec<u8>>,
 ) -> Result<(), Box<dyn Error>> {
     match param {
-        Parameter::Bool(b) => (*b as u8).write(buffer)?,
+        Parameter::Bool(b) => (*b as u32).write(buffer)?,
         Parameter::F32(f) => f.write(buffer)?,
         Parameter::Int(i) => i.write(buffer)?,
         Parameter::Vec2(v) => v.0.write(buffer)?,
