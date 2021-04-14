@@ -1,4 +1,4 @@
-#![feature(seek_convenience, const_fn)]
+#![feature(seek_convenience, const_fn, seek_stream_len)]
 use crc::{crc32, Hasher32};
 use indexmap::IndexMap;
 pub mod names;
