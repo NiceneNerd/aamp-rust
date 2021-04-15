@@ -3,31 +3,15 @@ use super::{Parameter, ParameterIO, ParameterList, ParameterObject};
 use binread::{BinRead, NullString};
 use indexmap::IndexMap;
 use std::convert::TryFrom;
-use std::error::Error;
 use std::io::{Read, Seek, SeekFrom};
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ParseError {
-    BinReadError(binread::error::Error),
-    Error(Box<dyn Error>),
-}
-
-impl From<binread::error::Error> for ParseError {
-    fn from(error: binread::error::Error) -> ParseError {
-        ParseError::BinReadError(error)
-    }
-}
-
-impl From<Box<dyn Error>> for ParseError {
-    fn from(error: Box<dyn Error>) -> ParseError {
-        ParseError::Error(error)
-    }
-}
-
-impl From<std::io::Error> for ParseError {
-    fn from(error: std::io::Error) -> ParseError {
-        ParseError::Error(error.into())
-    }
+    #[error(transparent)]
+    BinReadError(#[from] binread::error::Error),
+    #[error(transparent)]
+    IOError(#[from] std::io::Error),
 }
 
 #[derive(Debug, BinRead)]

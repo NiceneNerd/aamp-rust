@@ -1,8 +1,7 @@
 use super::{Parameter, ParameterIO, ParameterList, ParameterObject};
 use binwrite::BinWrite;
 use indexmap::IndexMap;
-use std::error::Error;
-use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+use std::io::{Cursor, Read, Result, Seek, SeekFrom, Write};
 
 #[derive(Debug, Copy, Clone)]
 enum ParameterType {
@@ -119,7 +118,7 @@ fn u24_offset(offset: &u32) -> [u8; 3] {
 impl ParameterIO {
     /// Serializes an AAMP Parameter IO document to its binary format. Returns a result containing
     /// a `Vec<u8>` or a boxed error.
-    pub fn to_binary(&self) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn to_binary(&self) -> Result<Vec<u8>> {
         let mut buffer: Cursor<Vec<u8>> = Cursor::new(vec![]);
         self.write_binary(&mut buffer)?;
         let mut bytes: Vec<u8> = vec![];
@@ -130,7 +129,7 @@ impl ParameterIO {
 
     /// Serializes an AAMP Parameter IO document to its binary format using a write implementing the
     /// Write and Seek traits. Returns a result indicating success or a boxed error.
-    pub fn write_binary<W: Write + Seek>(&self, writer: &mut W) -> Result<(), Box<dyn Error>> {
+    pub fn write_binary<W: Write + Seek>(&self, writer: &mut W) -> Result<()> {
         let pio_type = format!("{}\0", self.pio_type);
         let lists_size = (count_lists(&self.lists) + 1) * 12;
         let objs_size = count_objs(&self.lists, self.objects.len()) * 8;
@@ -209,7 +208,7 @@ fn write_list_contents<'a>(
     lists_size: usize,
     objs_size: usize,
     params_size: usize,
-) -> Result<Vec<(u32, &'a Parameter)>, Box<dyn Error>> {
+) -> Result<Vec<(u32, &'a Parameter)>> {
     let mut all_params: Vec<(u32, &Parameter)> = vec![];
     let pos = list_buffer.stream_position()?;
     if !objects.is_empty() {
@@ -277,7 +276,7 @@ fn write_param_data(
     parent_offset: usize,
     param_buffer: &mut Cursor<Vec<u8>>,
     data_buffer: &mut Cursor<Vec<u8>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let offset_pad = if param.is_buffer() { 4 } else { 0 };
     write_param_offset(
         parent_offset,
@@ -295,7 +294,7 @@ fn write_param_string(
     parent_offset: usize,
     param_buffer: &mut Cursor<Vec<u8>>,
     data_buffer: &mut Cursor<Vec<u8>>,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     write_param_offset(
         parent_offset,
         data_buffer.stream_position().unwrap() as u32,
@@ -312,7 +311,7 @@ fn write_param_offset(
     param_offset: u32,
     param_buffer: &mut Cursor<Vec<u8>>,
     pad: usize,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<()> {
     let param_pos = param_buffer.stream_position()?;
     param_buffer.seek(SeekFrom::Start((parent_offset + 4) as u64))?;
     let rel_offset =
@@ -360,7 +359,7 @@ fn count_params(
 }
 
 #[inline]
-fn align_cursor<W: Write + Seek>(buffer: &mut W) -> Result<(), Box<dyn Error>> {
+fn align_cursor<W: Write + Seek>(buffer: &mut W) -> Result<()> {
     let pos = buffer.seek(SeekFrom::Current(0))? as u32;
     buffer.seek(SeekFrom::Start(align(pos) as u64))?;
     Ok(())
@@ -371,10 +370,7 @@ fn align(int: u32) -> u32 {
     int + 4 - 1 - (int - 1) % 4
 }
 
-fn write_param_value(
-    param: &Parameter,
-    buffer: &mut Cursor<Vec<u8>>,
-) -> Result<(), Box<dyn Error>> {
+fn write_param_value(param: &Parameter, buffer: &mut Cursor<Vec<u8>>) -> Result<()> {
     match param {
         Parameter::Bool(b) => (*b as u32).write(buffer)?,
         Parameter::F32(f) => f.write(buffer)?,
