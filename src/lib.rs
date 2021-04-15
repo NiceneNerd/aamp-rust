@@ -1,4 +1,24 @@
-#![feature(seek_convenience, const_fn)]
+#![feature(const_fn, seek_stream_len)]
+//! # Nintendo parameter archive (AAMP) library in Rust
+//!
+//! A simple to use library for reading, writing, and converting Nintendo parameter archive (AAMP) files
+//! in Rust. Supports only AAMP version 2, used in _The Legend of Zelda: Breath of the Wild_. Can
+//! convert from AAMP to readable, editable YAML and back.
+//!
+//! ```rust
+//! use aamp::ParameterIO;
+//! let mut file = std::fs::File::open("test/Enemy_Lizalfos_Electric.bchemical").unwrap();
+//! // Read an AAMP ParameterIO from any reader that implements Seek + Read
+//! let pio = ParameterIO::from_binary(&mut file).unwrap();
+//! for list in pio.lists.iter() {
+//!     // Do stuff with lists
+//! }
+//! for obj in pio.objects.iter() {
+//!     // Do stuff with objects
+//! }
+//! // Dumps YAML representation to a String
+//! let yaml_dump: String = pio.to_text().unwrap();
+//! ```
 use crc::{crc32, Hasher32};
 use indexmap::IndexMap;
 pub mod names;
@@ -36,20 +56,24 @@ pub enum Parameter {
 impl Parameter {
     #[inline]
     fn is_string(self: &Parameter) -> bool {
-        matches! (self,
+        matches!(
+            self,
             Parameter::String32(_)
-            | Parameter::String64(_)
-            | Parameter::String256(_)
-            | Parameter::StringRef(_))
+                | Parameter::String64(_)
+                | Parameter::String256(_)
+                | Parameter::StringRef(_)
+        )
     }
 
     #[inline]
     fn is_buffer(self: &Parameter) -> bool {
-        matches! (self,
+        matches!(
+            self,
             Parameter::BufferBinary(_)
-            | Parameter::BufferF32(_)
-            | Parameter::BufferInt(_)
-            | Parameter::BufferU32(_))
+                | Parameter::BufferF32(_)
+                | Parameter::BufferInt(_)
+                | Parameter::BufferU32(_)
+        )
     }
 }
 
@@ -140,7 +164,6 @@ mod tests {
     use super::ParameterIO;
     use glob::glob;
     use std::fs::File;
-    use std::io::Write;
     use std::path::PathBuf;
 
     #[test]
@@ -162,10 +185,7 @@ mod tests {
             let good_file: PathBuf = file.unwrap();
             let mut reader = File::open(&good_file).unwrap();
             let pio: ParameterIO = ParameterIO::from_binary(&mut reader).unwrap();
-            File::create(good_file.with_extension("yml"))
-                .unwrap()
-                .write_all(pio.to_text().unwrap().as_bytes())
-                .unwrap();
+            pio.to_text().unwrap();
         }
     }
 
@@ -178,23 +198,18 @@ mod tests {
             let new_text = pio.clone().to_text().unwrap();
             let new_pio = ParameterIO::from_text(&new_text).unwrap();
             if pio != new_pio {
-                File::create(&good_file.with_extension("2.yml"))
-                    .unwrap()
-                    .write_all(new_text.as_bytes())
-                    .unwrap();
-                panic!(format!(
+                panic!(
                     "{:?} failed YAML roundtrip\n{:?}\n{:?}",
                     &good_file, pio, new_pio
-                ));
+                );
             }
         }
     }
 
     #[test]
     fn yaml_to_binary() {
-        for file in glob("test/*.yml").unwrap() {
-            let pio =
-                ParameterIO::from_text(&std::fs::read_to_string(file.unwrap()).unwrap()).unwrap();
+        for file in glob("test/*.yml").unwrap().filter_map(|f| f.ok()) {
+            let pio = ParameterIO::from_text(&std::fs::read_to_string(&file).unwrap()).unwrap();
             let binary = pio.to_binary().unwrap();
             assert_eq!(
                 pio,
