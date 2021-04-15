@@ -1,3 +1,3 @@
 pub mod emit;
-mod forked;
+pub(crate) mod forked;
 pub mod parse;

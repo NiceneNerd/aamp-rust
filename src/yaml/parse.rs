@@ -4,12 +4,26 @@ use crate::types::*;
 use crate::{Parameter, ParameterIO, ParameterList, ParameterObject};
 use crc::{crc32, Hasher32};
 use indexmap::IndexMap;
-use std::error::Error;
+use thiserror::Error;
+
+type Result<T> = std::result::Result<T, YamlParseError>;
+
+#[derive(Debug, Error)]
+pub enum YamlParseError {
+    #[error("YAML document not a valid ParameterIO: {0}")]
+    InvalidPio(String),
+    #[error("YAML document is not valid")]
+    InvalidYaml(#[from] crate::yaml::forked::scanner::ScanError),
+    #[error("YAML contains invalid integer: {0}")]
+    InvalidInt(#[from] std::num::ParseIntError),
+    #[error("YAML has invalid float: {0}")]
+    InvalidFloat(#[from] std::num::ParseFloatError),
+}
 
 impl ParameterIO {
     /// Parses an AAMP Parameter IO document from a YAML representation. Takes a string slice and
     /// returns a result containing a `ParameterIO` or a boxed error.
-    pub fn from_text(text: &str) -> Result<ParameterIO, Box<dyn Error>> {
+    pub fn from_text(text: &str) -> Result<ParameterIO> {
         let mut parser = Parser::new(text.chars());
         let (pio_type, version) = parse_header(&mut parser)?;
         let mut pio_parser = PioYamlParser::new(version, pio_type);
@@ -19,24 +33,22 @@ impl ParameterIO {
             Some(err) => Err(err),
             None => match pio_parser.pio {
                 Some(pio) => Ok(pio),
-                None => Err(Box::new(PioParseError(
+                None => Err(YamlParseError::InvalidPio(
                     "Could not parse document".to_owned(),
-                ))),
+                )),
             },
         }
     }
 }
 
-fn parse_header<T: Iterator<Item = char>>(
-    parser: &mut Parser<T>,
-) -> Result<(String, u32), Box<dyn Error>> {
+fn parse_header<T: Iterator<Item = char>>(parser: &mut Parser<T>) -> Result<(String, u32)> {
     match parser.next()?.0 {
         Event::StreamStart => (),
-        _ => return Err(Box::new(PioParseError("No stream start".to_owned()))),
+        _ => return Err(YamlParseError::InvalidPio("No stream start".to_owned())),
     };
     match parser.next()?.0 {
         Event::DocumentStart => (),
-        _ => return Err(Box::new(PioParseError("No doc start".to_owned()))),
+        _ => return Err(YamlParseError::InvalidPio("No doc start".to_owned())),
     };
     match parser.next()?.0 {
         Event::MappingStart(_, tag) => match tag {
@@ -59,30 +71,30 @@ fn parse_header<T: Iterator<Item = char>>(
                                                         assert_eq!(&v, "param_root");
                                                         Ok((pio_type, version))
                                                     }
-                                                    _ => Err(Box::new(PioParseError(
+                                                    _ => Err(YamlParseError::InvalidPio(
                                                         "Missing param root".to_owned(),
-                                                    ))),
+                                                    )),
                                                 }
                                             }
-                                            _ => Err(Box::new(PioParseError(
+                                            _ => Err(YamlParseError::InvalidPio(
                                                 "Missing type".to_owned(),
-                                            ))),
+                                            )),
                                         }
                                     }
-                                    _ => Err(Box::new(PioParseError("Missing type".to_owned()))),
+                                    _ => Err(YamlParseError::InvalidPio("Missing type".to_owned())),
                                 }
                             }
-                            _ => Err(Box::new(PioParseError("Missing version".to_owned()))),
+                            _ => Err(YamlParseError::InvalidPio("Missing version".to_owned())),
                         }
                     }
-                    _ => Err(Box::new(PioParseError("Missing version".to_owned()))),
+                    _ => Err(YamlParseError::InvalidPio("Missing version".to_owned())),
                 }
             }
-            _ => Err(Box::new(PioParseError(
+            _ => Err(YamlParseError::InvalidPio(
                 "Not a Parameter IO document".to_owned(),
-            ))),
+            )),
         },
-        _ => Err(Box::new(PioParseError("No mapping start".to_owned()))),
+        _ => Err(YamlParseError::InvalidPio("No mapping start".to_owned())),
     }
 }
 
@@ -100,7 +112,7 @@ struct PioYamlParser {
     pio_type: String,
     pio_version: u32,
     pio: Option<ParameterIO>,
-    error: Option<Box<dyn Error>>,
+    error: Option<YamlParseError>,
     last_event: Option<Event>,
 }
 
@@ -109,7 +121,7 @@ impl MarkedEventReceiver for PioYamlParser {
         if self.error.is_some() {
             return;
         }
-        let okay = || -> Result<(), Box<dyn Error>> {
+        let okay = || -> Result<()> {
             match ev.clone() {
                 Event::MappingStart(_, tag) => {
                     match tag {
@@ -125,18 +137,18 @@ impl MarkedEventReceiver for PioYamlParser {
                                 self.doing_param_key = true;
                             }
                             _ => {
-                                return Err(Box::new(PioParseError(format!(
+                                return Err(YamlParseError::InvalidPio(format!(
                                     "Bad mapping tag at {:?}",
                                     mark
-                                ))))
+                                )))
                             }
                         },
                         _ => {
                             if !(self.doing_lists || self.doing_objects) {
-                                return Err(Box::new(PioParseError(format!(
+                                return Err(YamlParseError::InvalidPio(format!(
                                     "Bad mapping tag at {:?}",
                                     mark
-                                ))));
+                                )));
                             }
                         }
                     };
@@ -146,14 +158,14 @@ impl MarkedEventReceiver for PioYamlParser {
                         let params = self
                             .open_params
                             .take()
-                            .ok_or_else(|| PioParseError("No params".to_owned()))?;
+                            .ok_or_else(|| YamlParseError::InvalidPio("No params".to_owned()))?;
                         let key = self
                             .open_keys
                             .pop()
-                            .ok_or_else(|| PioParseError("No keys".to_owned()))?;
+                            .ok_or_else(|| YamlParseError::InvalidPio("No keys".to_owned()))?;
                         self.open_objs
                             .last_mut()
-                            .ok_or_else(|| PioParseError("No objcts".to_owned()))?
+                            .ok_or_else(|| YamlParseError::InvalidPio("No objcts".to_owned()))?
                             .insert(hashit(&key), ParameterObject(params));
                         self.doing_param_key = false;
                     } else if self.doing_objects {
@@ -167,18 +179,19 @@ impl MarkedEventReceiver for PioYamlParser {
                             let list_map = self
                                 .open_list_maps
                                 .pop()
-                                .ok_or_else(|| PioParseError("No lists".to_owned()))?;
-                            let obj_map = self
-                                .open_objs
-                                .pop()
-                                .ok_or_else(|| PioParseError("No objects".to_owned()))?;
+                                .ok_or_else(|| YamlParseError::InvalidPio("No lists".to_owned()))?;
+                            let obj_map = self.open_objs.pop().ok_or_else(|| {
+                                YamlParseError::InvalidPio("No objects".to_owned())
+                            })?;
                             let key = self
                                 .open_keys
                                 .pop()
-                                .ok_or_else(|| PioParseError("No keys".to_owned()))?;
+                                .ok_or_else(|| YamlParseError::InvalidPio("No keys".to_owned()))?;
                             self.open_list_maps
                                 .last_mut()
-                                .ok_or_else(|| PioParseError("No list maps".to_owned()))?
+                                .ok_or_else(|| {
+                                    YamlParseError::InvalidPio("No list maps".to_owned())
+                                })?
                                 .insert(
                                     hashit(&key),
                                     ParameterList {
@@ -190,14 +203,12 @@ impl MarkedEventReceiver for PioYamlParser {
                             self.pio = Some(ParameterIO {
                                 pio_type: self.pio_type.to_owned(),
                                 version: self.pio_version,
-                                lists: self
-                                    .open_list_maps
-                                    .pop()
-                                    .ok_or_else(|| PioParseError("No list maps".to_owned()))?,
-                                objects: self
-                                    .open_objs
-                                    .pop()
-                                    .ok_or_else(|| PioParseError("No objects".to_owned()))?,
+                                lists: self.open_list_maps.pop().ok_or_else(|| {
+                                    YamlParseError::InvalidPio("No list maps".to_owned())
+                                })?,
+                                objects: self.open_objs.pop().ok_or_else(|| {
+                                    YamlParseError::InvalidPio("No objects".to_owned())
+                                })?,
                             })
                         }
                         self.doing_lists = !self.doing_lists;
@@ -210,10 +221,10 @@ impl MarkedEventReceiver for PioYamlParser {
                             self.open_tag = Some(suffix.to_owned())
                         }
                         _ => {
-                            return Err(Box::new(PioParseError(format!(
+                            return Err(YamlParseError::InvalidPio(format!(
                                 "Missing sequence tag at {:?}",
                                 mark
-                            ))))
+                            )))
                         }
                     }
                 }
@@ -221,11 +232,11 @@ impl MarkedEventReceiver for PioYamlParser {
                     let seq = self
                         .open_seq
                         .take()
-                        .ok_or_else(|| PioParseError("No sequence".to_owned()))?;
+                        .ok_or_else(|| YamlParseError::InvalidPio("No sequence".to_owned()))?;
                     let tag = self
                         .open_tag
                         .take()
-                        .ok_or_else(|| PioParseError("No sequence tag".to_owned()))?;
+                        .ok_or_else(|| YamlParseError::InvalidPio("No sequence tag".to_owned()))?;
                     let param: Parameter = match tag.as_str() {
                         "vec2" => {
                             Parameter::Vec2(Vec2([seq[0].parse::<f32>()?, seq[1].parse::<f32>()?]))
@@ -257,37 +268,37 @@ impl MarkedEventReceiver for PioYamlParser {
                         "buffer_int" => Parameter::BufferInt(BufferInt {
                             buffer: seq
                                 .iter()
-                                .map(|x| x.parse::<i32>())
-                                .collect::<Result<Vec<i32>, _>>()?,
+                                .map(|x| x.parse::<i32>().map_err(|e| e.into()))
+                                .collect::<Result<Vec<i32>>>()?,
                         }),
                         "buffer_u32" => Parameter::BufferU32(BufferU32 {
                             buffer: seq
                                 .iter()
-                                .map(|x| parse_int::parse::<u32>(&x))
-                                .collect::<Result<Vec<u32>, _>>()?,
+                                .map(|x| parse_int::parse::<u32>(&x).map_err(|e| e.into()))
+                                .collect::<Result<Vec<u32>>>()?,
                         }),
                         "buffer_binary" => Parameter::BufferBinary(BufferBinary {
                             buffer: seq
                                 .iter()
-                                .map(|x| parse_int::parse::<u8>(&x))
-                                .collect::<Result<Vec<u8>, _>>()?,
+                                .map(|x| parse_int::parse::<u8>(&x).map_err(|e| e.into()))
+                                .collect::<Result<Vec<u8>>>()?,
                         }),
                         "buffer_f32" => Parameter::BufferF32(BufferF32 {
                             buffer: seq
                                 .iter()
-                                .map(|x| x.parse::<f32>())
-                                .collect::<Result<Vec<f32>, _>>()?,
+                                .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                                .collect::<Result<Vec<f32>>>()?,
                         }),
-                        _ => return Err(Box::new(PioParseError("Unknown type tag".to_owned()))),
+                        _ => return Err(YamlParseError::InvalidPio("Unknown type tag".to_owned())),
                     };
                     match &self.open_keys.pop() {
                         Some(key) => {
                             self.open_params
                                 .as_mut()
-                                .ok_or_else(|| PioParseError("No params".to_owned()))?
+                                .ok_or_else(|| YamlParseError::InvalidPio("No params".to_owned()))?
                                 .insert(hashit(key), param);
                         }
-                        _ => return Err(Box::new(PioParseError("No key for value".to_owned()))),
+                        _ => return Err(YamlParseError::InvalidPio("No key for value".to_owned())),
                     }
                     self.doing_param_key = true;
                     return Ok(());
@@ -307,7 +318,7 @@ impl MarkedEventReceiver for PioYamlParser {
     }
 }
 
-fn vec_to_curve(seq: Vec<String>) -> Result<Parameter, Box<dyn Error>> {
+fn vec_to_curve(seq: Vec<String>) -> Result<Parameter> {
     assert_eq!(seq.len() % 32, 0);
     Ok(match seq.len() / 32 {
         1 => Parameter::Curve1(Curve1 {
@@ -316,8 +327,8 @@ fn vec_to_curve(seq: Vec<String>) -> Result<Parameter, Box<dyn Error>> {
                 b: seq[1].parse::<u32>()?,
                 floats: seq[2..]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
         }),
         2 => Parameter::Curve2(Curve2 {
@@ -326,16 +337,16 @@ fn vec_to_curve(seq: Vec<String>) -> Result<Parameter, Box<dyn Error>> {
                 b: seq[1].parse::<u32>()?,
                 floats: seq[2..32]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
             curve2: Curve {
                 a: seq[32].parse::<u32>()?,
                 b: seq[33].parse::<u32>()?,
                 floats: seq[34..64]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
         }),
         3 => Parameter::Curve3(Curve3 {
@@ -344,24 +355,24 @@ fn vec_to_curve(seq: Vec<String>) -> Result<Parameter, Box<dyn Error>> {
                 b: seq[1].parse::<u32>()?,
                 floats: seq[2..32]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
             curve2: Curve {
                 a: seq[32].parse::<u32>()?,
                 b: seq[33].parse::<u32>()?,
                 floats: seq[34..64]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
             curve3: Curve {
                 a: seq[64].parse::<u32>()?,
                 b: seq[65].parse::<u32>()?,
                 floats: seq[66..96]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
         }),
         4 => Parameter::Curve4(Curve4 {
@@ -370,32 +381,32 @@ fn vec_to_curve(seq: Vec<String>) -> Result<Parameter, Box<dyn Error>> {
                 b: seq[1].parse::<u32>()?,
                 floats: seq[2..32]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
             curve2: Curve {
                 a: seq[32].parse::<u32>()?,
                 b: seq[33].parse::<u32>()?,
                 floats: seq[34..64]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
             curve3: Curve {
                 a: seq[64].parse::<u32>()?,
                 b: seq[65].parse::<u32>()?,
                 floats: seq[66..96]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
             curve4: Curve {
                 a: seq[96].parse::<u32>()?,
                 b: seq[97].parse::<u32>()?,
                 floats: seq[98..128]
                     .iter()
-                    .map(|x| x.parse::<f32>())
-                    .collect::<Result<Vec<f32>, _>>()?,
+                    .map(|x| x.parse::<f32>().map_err(|e| e.into()))
+                    .collect::<Result<Vec<f32>>>()?,
             },
         }),
         _ => panic!("Invalid curve length"),
@@ -424,7 +435,7 @@ impl PioYamlParser {
     }
 
     fn read_scalar(&mut self, val: String, style: TScalarStyle, tag: Option<TokenType>) {
-        let okay = || -> Result<(), Box<dyn Error>> {
+        let okay = || -> Result<()> {
             if let Some(seq) = self.open_seq.as_mut() {
                 seq.push(val);
                 Ok(())
@@ -479,7 +490,9 @@ impl PioYamlParser {
                                 params.insert(hashit(key), param);
                             }
                             None => {
-                                return Err(Box::new(PioParseError("No key for value".to_owned())))
+                                return Err(YamlParseError::InvalidPio(
+                                    "No key for value".to_owned(),
+                                ))
                             }
                         }
                         self.doing_param_key = true;
@@ -534,16 +547,5 @@ fn hashit(string: &str) -> u32 {
         let mut digest = crc32::Digest::new(crc32::IEEE);
         digest.write(string.as_bytes());
         digest.sum32()
-    }
-}
-
-#[derive(Debug)]
-struct PioParseError(String);
-
-impl Error for PioParseError {}
-
-impl std::fmt::Display for PioParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.0)
     }
 }

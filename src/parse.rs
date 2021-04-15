@@ -6,10 +6,12 @@ use std::convert::TryFrom;
 use std::io::{Read, Seek, SeekFrom};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Error, Debug)]
 pub enum ParseError {
     #[error(transparent)]
     BinReadError(#[from] binread::error::Error),
+    #[error(transparent)]
+    YamlParseError(#[from] crate::yaml::parse::YamlParseError),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
 }
