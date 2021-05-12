@@ -1,4 +1,4 @@
-#![feature(const_fn, seek_stream_len)]
+#![feature(seek_stream_len)]
 //! # Nintendo parameter archive (AAMP) library in Rust
 //!
 //! A simple to use library for reading, writing, and converting Nintendo parameter archive (AAMP) files
