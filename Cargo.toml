@@ -6,23 +6,9 @@ documentation = "https://docs.rs/aamp"
 readme = "README.md"
 keywords = ["Nintendo", "aamp", "Zelda", "gamedev"]
 categories = ["game-development", "parsing"]
-version = "0.1.6"
-authors = ["Caleb Smith <macadamiadaze@gmail.com>"]
+version = "0.2.0"
+authors = ["Caleb Smith <c.smith@tuta.io>"]
 license = "MIT"
-edition = "2018"
 
 [dependencies]
-binread = "1.4"
-binwrite = "0.2.1"
-cached = "0.23.0"
-crc = "1.8.1"
-indexmap = "1.6.0"
-glob = "0.3.0"
-lazy_static = "1.4.0"
-metrohash = "1.0.6"
-num-format = "0.4.0"
-parse_int = "0.5.0"
-regex = "1.4.2"
-ryu = "1.0"
-thiserror = "1.0"
-unescape = "0.1.0"
+nom = "7.1.1"
